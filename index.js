@@ -12,7 +12,7 @@ import qrcode from 'qrcode'
 const app = express()
 app.use(express.json())
 
-const PORT = process.env.PORT || 3000
+const PORT = process.env.PORT || 8080
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || ''
 
 let sock = null
