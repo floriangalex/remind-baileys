@@ -16,7 +16,6 @@ app.use(express.json())
 const PORT = process.env.PORT || 8080
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || ''
 
-// Crée le dossier auth_info s'il n'existe pas
 mkdirSync('./auth_info', { recursive: true })
 
 let sock = null
