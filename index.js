@@ -8,6 +8,7 @@ import express from 'express'
 import axios from 'axios'
 import pino from 'pino'
 import qrcode from 'qrcode'
+import { mkdirSync } from 'fs'
 
 const app = express()
 app.use(express.json())
@@ -15,11 +16,14 @@ app.use(express.json())
 const PORT = process.env.PORT || 8080
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || ''
 
+// Crée le dossier auth_info s'il n'existe pas
+mkdirSync('./auth_info', { recursive: true })
+
 let sock = null
 let latestQR = null
 
 async function connectToWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState('auth_info')
+  const { state, saveCreds } = await useMultiFileAuthState('./auth_info')
   const { version } = await fetchLatestBaileysVersion()
 
   sock = makeWASocket({
@@ -27,6 +31,7 @@ async function connectToWhatsApp() {
     auth: state,
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
+    browser: ['Remind', 'Chrome', '1.0.0'],
   })
 
   sock.ev.on('creds.update', saveCreds)
@@ -40,9 +45,12 @@ async function connectToWhatsApp() {
     }
 
     if (connection === 'close') {
-      const shouldReconnect = new Boom(lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut
+      const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut
       console.log('Connexion fermée, reconnexion:', shouldReconnect)
-      if (shouldReconnect) connectToWhatsApp()
+      if (shouldReconnect) {
+        setTimeout(connectToWhatsApp, 3000)
+      }
     }
 
     if (connection === 'open') {
@@ -76,9 +84,9 @@ async function connectToWhatsApp() {
 
 app.get('/qr', (req, res) => {
   if (latestQR) {
-    res.send(`<html><body><h2>Scanne ce QR avec WhatsApp</h2><img src="${latestQR}" /></body></html>`)
+    res.send(`<html><body style="background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;"><h2 style="color:white">Scanne ce QR avec WhatsApp</h2><img src="${latestQR}" style="width:300px"/></body></html>`)
   } else {
-    res.send('<html><body><h2>✅ WhatsApp déjà connecté !</h2></body></html>')
+    res.send('<html><body style="background:#111;display:flex;align-items:center;justify-content:center;height:100vh;"><h2 style="color:#4CAF50">✅ WhatsApp déjà connecté !</h2></body></html>')
   }
 })
 
@@ -86,14 +94,15 @@ app.post('/send', async (req, res) => {
   const { to, message } = req.body
   if (!sock) return res.status(500).json({ error: 'WhatsApp non connecté' })
   try {
-    await sock.sendMessage(to + '@s.whatsapp.net', { text: message })
+    const jid = to.includes('@') ? to : to + '@s.whatsapp.net'
+    await sock.sendMessage(jid, { text: message })
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }))
+app.get('/health', (req, res) => res.json({ status: 'ok', connected: sock !== null }))
 
 app.listen(PORT, () => console.log(`🚀 Serveur démarré sur port ${PORT}`))
 connectToWhatsApp()
